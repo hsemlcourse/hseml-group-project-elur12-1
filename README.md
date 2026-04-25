@@ -1,87 +1,126 @@
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/kOqwghv0)
-# ML Project — [Название проекта]
 
-**Студент:** [ФИО / Student ID]
+# ML Project — IMU → 3D Skeleton Regression
 
-**Группа:** [Группа]
+**Студент:** Клюшкин Михаил Александрович
+
+**Группа:** БИВ237
 
 
 ## Оглавление
-
 1. [Описание задачи](#описание-задачи)
 2. [Структура репозитория](#структура-репозитория)
-3. [Запуски](#быстрый-старт)
+3. [Запуск](#запуск)
 4. [Данные](#данные)
 5. [Результаты](#результаты)
-7. [Отчёт](#отчёт)
+6. [Отчёт](#отчёт)
 
 
 ## Описание задачи
 
-<!-- Кратко опишите задачу: что предсказываем, какой датасет, метрика качества -->
+**Задача**: регрессия 3D-позиций суставов верхней части тела (14 суставов) по показаниям 13 IMU-сенсоров (ориентация в кватернионах, акселерометр, гироскоп, магнитометр).
 
-**Задача:** [Классификация / Регрессия / Кластеризация / ...]
+**Датасет**: [TotalCapture](https://cvssp.org/data/totalcapture/) (CVSSP, University of Surrey) — subject S1, 12 записей четырёх типов движений (acting / freestyle / range-of-motion / walking).
 
-**Датасет:** [Название и источник датасета]
+**Целевая метрика**: **MPJPE** (Mean Per-Joint Position Error) — среднее евклидово расстояние между предсказанными и истинными 3D-позициями суставов. Вспомогательные: RMSE, MAE.
 
-**Целевая метрика:** [Accuracy / F1 / RMSE / ...]
+Подробное описание данных — в [`data/DATA_INFO.md`](data/DATA_INFO.md).
 
 
 ## Структура репозитория
-Опишите структуру проекта, сохранив при этом верхнеуровневые папки. Можно добавить новые при необходимости.
 ```
 .
 ├── data
-│   ├── processed               # Очищенные и обработанные данные
-│   └── raw                     # Исходные файлы
-├── models                      # Сохранённые модели 
+│   ├── processed                # Готовые train/val/test.npz и scaler.npz
+│   ├── raw                      # Исходные .sensors / .bvh / калибровки (не коммитятся)
+│   └── DATA_INFO.md             # Подробное описание данных и сплита
+├── models                       # Сохранённые предсказания и метрики моделей
 ├── notebooks
-│   ├── 01_eda.ipynb            # EDA
-│   ├── 02_baseline.ipynb       # Baseline-модель
-│   └── 03_experiments.ipynb    # Эксперименты и ablation study
-├── presentation                # Презентация для защиты
+│   ├── 01_eda.ipynb             # EDA: размер, распределения, корреляции, скелет, PCA
+│   ├── 02_baseline.ipynb        # Baseline: Linear Regression + per-joint MPJPE
+│   └── 03_experiments.ipynb     # Сравнение моделей, hyperparam-перебор, ablation
+├── presentation                 # Презентация для защиты
 ├── report
-│   ├── images                  # Изображения для отчёта
-│   └── report.md               # Финальный отчёт
+│   ├── images                   # Графики из ноутбуков
+│   └── report.md                # Финальный отчёт
 ├── src
-│   ├── preprocessing.py        # Предобработка данных
-│   └── modeling.py             # Обучение и оценка моделей
+│   ├── preprocessing.py         # Парсеры .sensors/.bvh/калибровок, фичи, сплит
+│   └── modeling.py              # Linear/Ridge/KNN/RF/XGB/LGBM/MLP/BiLSTM + ансамбль
 ├── tests
-│   └── test.py                 # Тесты пайплайна
+│   └── test.py                  # Тесты пайплайна (pytest)
 ├── requirements.txt
+├── pytest.ini
 └── README.md
 ```
 
+
 ## Запуск
 
-Этот блок замените способом запуска вашего сервиса.
 ```bash
-# 1. Клонировать репозиторий
-git clone <url>
-cd <repo-name>
+# 1. Виртуальное окружение
+python -m venv .venv && source .venv/bin/activate
 
-# 2. Создать виртуальное окружение
-python -m venv .venv
-source .venv/bin/activate   # Linux/macOS
-# .venv\Scripts\activate    # Windows
-
-# 3. Установить зависимости
+# 2. Зависимости
 pip install -r requirements.txt
+
+# 3. Данные: разложить TotalCapture в data/raw/{s1_imu, s1_Gyro_Mag, S1_vicon}
+#    (см. data/DATA_INFO.md)
+
+# 4. Препроцессинг → data/processed/{train,val,test}.npz + scaler.npz
+python -m src.preprocessing --data-root data/raw --out data/processed
+
+# 5. Обучение и оценка любой модели
+python -m src.modeling --model linear            # baseline
+python -m src.modeling --model rf                # RandomForest
+python -m src.modeling --model xgb               # XGBoost
+python -m src.modeling --model lgbm              # LightGBM
+python -m src.modeling --model mlp --epochs 30   # MLP (PyTorch)
+python -m src.modeling --model bilstm --epochs 20  # BiLSTM (PyTorch)
+
+# 6. Ансамбль (после обучения нескольких моделей)
+python -m src.modeling --model ensemble --members linear rf xgb mlp
+
+# 7. Тесты
+pytest
+
+# 8. Линтер
+ruff check src/ --line-length 120
 ```
 
 ## Данные
-- `data/raw/` — исходные файлы
-- `data/processed/` — предобработанные данные
+
+- `data/raw/` — исходные файлы TotalCapture (см. [`DATA_INFO.md`](data/DATA_INFO.md)). Не коммитятся из-за лицензии.
+- `data/processed/` — артефакты препроцессинга:
+  - `train.npz` (~31k кадров), `val.npz` (~6k), `test.npz` (~8k)
+  - `scaler.npz` — μ/σ стандартизации, имена сенсоров и таргет-суставов
+
+**Сплит** делается по записям (takes), не по кадрам — чтобы избежать data leakage от соседних кадров одной записи. Все 4 категории (acting/freestyle/rom/walking) представлены и в train, и в hold-out.
 
 
 ## Результаты
-Здесь коротко выпишите результаты.
-| Модель | [Метрика 1] | [Метрика 2] | Примечание |
-|--------|-------------|-------------|------------|
-| Baseline | — | — | |
-| Лучшая модель | — | — | |
+
+Метрика MPJPE — в единицах BVH (≈ см для данного скелета). Чем меньше — тем лучше.
+
+| Модель                  | val MPJPE | test MPJPE | test RMSE | test MAE |  time |
+|-------------------------|----------:|-----------:|----------:|---------:|------:|
+| **Linear (baseline)** ★ |  **0.08** |   **0.11** |      0.11 |     0.04 |    2с |
+| KNN (k=8)               |     54.58 |      13.77 |     17.44 |     5.88 |    3с |
+| RandomForest            |      5.49 |       1.73 |      2.68 |     0.71 |  6мин |
+| XGBoost                 |      3.29 |       1.40 |      1.74 |     0.56 |  4мин |
+| LightGBM                |      1.53 |       0.56 |      0.78 |     0.22 |  7мин |
+| MLP (4 блока, 20 эп.)   |     11.12 |       5.04 |      4.90 |     2.15 |   24с |
+| BiLSTM (12 эп.)         |     57.86 |      14.51 |     13.58 |     6.51 |   60с |
+| Ensemble (linear+lgbm)  |      0.77 |       0.31 |       —   |      —   |     — |
+| Ensemble (linear+xgb)   |      1.65 |       0.71 |       —   |      —   |     — |
+| Ensemble (linear+xgb+rf+lgbm)| 2.19 |      0.80 |       —   |      —   |     — |
+
+> Числа в единицах BVH (≈ см). RMSE и MAE — на test, по плоскому 42-мерному вектору.
+>
+> **Линейная модель — финальная (★).** MPJPE 0.08–0.11 см невозможно превзойти более сложными моделями: задача почти линейна в пространстве калиброванных кватернионов (позиция сустава = композиция поворотов вышележащих костей с константными длинами). Ансамбли только разбавляют качество Linear. BiLSTM нужен × больше эпох; MLP теряет временной контекст. Подробная интерпретация — в `report/report.md`.
+
+Финальные числа и обоснование выбора модели — в [`report/report.md`](report/report.md).
 
 
 ## Отчёт
 
-Финальный отчёт: [`report/report.md`](report/report.md)
+Финальный отчёт: [`report/report.md`](report/report.md).

@@ -1,6 +1,4 @@
-# =============================================================================
 # Python
-# =============================================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -14,67 +12,37 @@ build/
 pip-log.txt
 pip-delete-this-directory.txt
 
-# =============================================================================
 # Virtual environments
-# =============================================================================
 .venv/
 venv/
 ENV/
 env/
 .env
 
-# =============================================================================
-# Jupyter Notebooks
-# =============================================================================
+# Jupyter
 .ipynb_checkpoints/
 */.ipynb_checkpoints/*
 
-# =============================================================================
-# Data — large files are NOT committed
-# =============================================================================
-data/raw/*.csv
-data/raw/*.json
-data/raw/*.parquet
-data/raw/*.xlsx
-data/raw/*.zip
-data/raw/*.tar.gz
-data/raw/*.h5
-data/raw/*.hdf5
-data/processed/*.csv
-data/processed/*.json
-data/processed/*.parquet
-data/processed/*.pkl
-data/processed/*.npy
-data/processed/*.npz
-
-# Keep directory structure
+# Data — raw and processed (large, license-restricted)
+data/raw/**
+data/processed/**
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/DATA_INFO.md
 
-# =============================================================================
-# Models — large binary files
-# =============================================================================
+# Models — predictions are regenerable; metrics JSONs are committed
+models/*.npz
 models/*.pkl
 models/*.joblib
 models/*.h5
 models/*.pt
 models/*.pth
 models/*.onnx
-!models/.gitkeep
 
-# =============================================================================
-# Reports — figures are regenerated, but keep CSV
-# =============================================================================
-reports/figures/*.png
-reports/figures/*.jpg
-reports/figures/*.svg
-reports/figures/*.pdf
-!reports/figures/.gitkeep
-# ablation_table.csv must be committed — do NOT add it here
+# Report figures (regenerable from notebooks)
+# report/images/ committed for grading — keep PNG inside
 
-# =============================================================================
 # OS
-# =============================================================================
 .DS_Store
 .DS_Store?
 ._*
@@ -83,21 +51,19 @@ reports/figures/*.pdf
 Thumbs.db
 ehthumbs.db
 
-# =============================================================================
 # IDEs
-# =============================================================================
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
 
-# =============================================================================
-# Misc
-# =============================================================================
+# Caches and logs
 *.log
 *.tmp
 .cache/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 htmlcov/
