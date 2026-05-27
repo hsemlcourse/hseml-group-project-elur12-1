@@ -14,6 +14,7 @@ pip-delete-this-directory.txt
 
 # Virtual environments
 .venv/
+.venv-viz/
 venv/
 ENV/
 env/

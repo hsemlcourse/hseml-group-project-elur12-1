@@ -35,6 +35,12 @@
 │   ├── raw                      # Исходные .sensors / .bvh / калибровки (не коммитятся)
 │   └── DATA_INFO.md             # Подробное описание данных и сплита
 ├── models                       # Сохранённые предсказания и метрики моделей
+├── deploy
+│   ├── Dockerfile               # Образ FastAPI-сервиса
+│   ├── docker-compose.yml       # Поднятие API одной командой
+│   ├── requirements-api.txt     # Минимум зависимостей для API (без torch)
+│   ├── requirements-viz.txt     # Зависимости локального venv для визуализации
+│   └── README.md                # Инструкция по запуску деплоя
 ├── notebooks
 │   ├── 01_eda.ipynb             # EDA: размер, распределения, корреляции, скелет, PCA
 │   ├── 02_baseline.ipynb        # Baseline: Linear Regression + per-joint MPJPE
@@ -45,7 +51,11 @@
 │   └── report.md                # Финальный отчёт
 ├── src
 │   ├── preprocessing.py         # Парсеры .sensors/.bvh/калибровок, фичи, сплит
-│   └── modeling.py              # Linear/Ridge/KNN/RF/XGB/LGBM/MLP/BiLSTM + ансамбль
+│   ├── modeling.py              # Linear/Ridge/KNN/RF/XGB/LGBM/MLP/BiLSTM + ансамбль
+│   ├── skeleton.py              # Топология скелета (suставы и кости)
+│   ├── api.py                   # FastAPI-сервис /predict
+│   ├── visualize.py             # 3D-визуализация скелета (matplotlib)
+│   └── client_example.py        # Демо-клиент API → визуализация
 ├── tests
 │   └── test.py                  # Тесты пайплайна (pytest)
 ├── requirements.txt
@@ -85,6 +95,29 @@ pytest
 
 # 8. Линтер
 ruff check src/ --line-length 120
+```
+
+## Деплой
+
+API (FastAPI + sklearn) запускается в Docker. Визуализатор matplotlib —
+отдельный лёгкий локальный `.venv-viz`. Краткая инструкция:
+[`deploy/QUICKSTART.md`](deploy/QUICKSTART.md). Подробнее: [`deploy/README.md`](deploy/README.md).
+
+```bash
+# 1. API в контейнере
+docker compose -f deploy/docker-compose.yml up --build -d
+curl http://127.0.0.1:8000/health
+# открыть Swagger UI: http://127.0.0.1:8000/docs
+
+# 2. Локальный venv для визуализации
+python -m venv .venv-viz && source .venv-viz/bin/activate
+pip install -r deploy/requirements-viz.txt
+
+# 3. Демо-клиент: один кадр PNG
+python -m src.client_example --start 100 --length 1 --out report/images/deploy_frame.png
+
+# 4. Анимация GIF
+python -m src.client_example --start 0 --length 240 --out report/images/deploy_anim.gif
 ```
 
 ## Данные

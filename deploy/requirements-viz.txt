@@ -1,0 +1,8 @@
+# Локальный .venv только для визуализации и общения с API.
+# Запуск:
+#   python -m venv .venv-viz && source .venv-viz/bin/activate
+#   pip install -r deploy/requirements-viz.txt
+#   python -m src.client_example --start 0 --length 1 --out demo.png
+numpy>=1.24.0,<2.0.0
+matplotlib>=3.7.0
+pillow>=10.0.0

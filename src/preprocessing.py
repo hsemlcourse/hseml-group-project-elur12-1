@@ -185,6 +185,8 @@ def calibrate_orientation(imu_quat_wxyz: np.ndarray,
 
 def finite_diff(signal: np.ndarray, dt: float = DT) -> np.ndarray:
     vel = np.zeros_like(signal)
+    if signal.shape[0] < 2:
+        return vel
     vel[1:] = (signal[1:] - signal[:-1]) / dt
     vel[0] = vel[1]
     return vel
