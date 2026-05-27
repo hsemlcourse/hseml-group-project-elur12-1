@@ -117,7 +117,7 @@ python -m src.client_example --start 500 --length 240 --out report/images/deploy
 - 240 кадров: MLP → MPJPE = 5.12 → [deploy_anim.gif](images/deploy_anim.gif) — pred (красный) поверх GT mocap (зелёный)
 - Healthcheck: `{"status":"ok","model_loaded":true,"model_kind":"mlp","n_features":305}`
 
-![demo frame](images/deploy_frame.png)
+[Ссылка на видео работы](https://disk.360.yandex.ru/i/JACv_jYYBkWFMQ)
 
 Подробности — [deploy/QUICKSTART.md](../deploy/QUICKSTART.md).
 

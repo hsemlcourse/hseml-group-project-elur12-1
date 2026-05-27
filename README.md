@@ -155,3 +155,4 @@ python -m src.client_example --start 0 --length 240 --out report/images/deploy_a
 ## Отчёт
 
 Финальный отчёт: [`report/report.md`](report/report.md).
+Видео работы деплоя: [Ссылка на видео работы](https://disk.360.yandex.ru/i/JACv_jYYBkWFMQ)
