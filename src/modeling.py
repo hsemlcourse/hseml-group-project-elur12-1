@@ -246,6 +246,32 @@ class MLPRegressor:
                 outs.append(self.model(xb).cpu().numpy())
         return np.concatenate(outs, axis=0)
 
+    def save(self, path: str, in_dim: int, out_dim: int) -> None:
+        """Сохраняет архитектуру + веса в один .pt-файл."""
+        import torch
+        torch.save({
+            "state_dict": self.model.state_dict(),
+            "config": {
+                "in_dim": in_dim, "out_dim": out_dim,
+                "hidden": self.hidden, "num_blocks": self.num_blocks, "dropout": self.dropout,
+                "batch_size": self.batch_size,
+            },
+        }, path)
+
+    @classmethod
+    def load(cls, path: str, device=None) -> "MLPRegressor":
+        import torch
+        ckpt = torch.load(path, map_location="cpu", weights_only=True)
+        cfg = ckpt["config"]
+        obj = cls(hidden=cfg["hidden"], num_blocks=cfg["num_blocks"],
+                  dropout=cfg["dropout"], batch_size=cfg.get("batch_size", 512),
+                  device=device)
+        obj.model = obj._build(cfg["in_dim"], cfg["out_dim"])
+        obj.model.load_state_dict(ckpt["state_dict"])
+        obj.model.to(device or get_device())
+        obj.model.eval()
+        return obj
+
 
 class BiLSTMRegressor:
     """BiLSTM на последовательностях кадров. fit/predict работают пакадрово,
@@ -408,6 +434,7 @@ def train_eval(model_name: str, processed_dir: str = PROCESSED_DIR,
         model.fit(Xtr, Ytr, X_val=Xv, Y_val=Yv)
         pred_val = model.predict(Xv)
         pred_test = model.predict(Xte)
+        model.save(os.path.join(models_dir, "mlp.pt"), in_dim=Xtr.shape[1], out_dim=Ytr.shape[1])
     elif model_name == "bilstm":
         model = BiLSTMRegressor(**kwargs)
         model.fit(Xtr, Ytr, train["take_id"],

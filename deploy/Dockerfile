@@ -14,6 +14,7 @@ COPY models /app/models
 COPY data/processed /app/data/processed
 
 ENV PYTHONUNBUFFERED=1 \
+    MLP_PATH=/app/models/mlp.pt \
     MODEL_PATH=/app/models/linear.joblib \
     SCALER_PATH=/app/data/processed/scaler.npz
 

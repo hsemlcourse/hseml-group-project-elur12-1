@@ -78,7 +78,8 @@ def main() -> None:
             import matplotlib.pyplot as plt
             plt.show()
     else:
-        animate(pred, out_path=args.out, title=f"frames {args.start}–{args.start+args.length}")
+        animate(pred, gt=Y_gt, out_path=args.out,
+                title=f"frames {args.start}–{args.start+args.length} (red=pred, green=GT)")
         if args.out:
             print(f"saved → {args.out}")
         else:

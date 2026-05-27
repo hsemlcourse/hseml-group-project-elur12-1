@@ -102,28 +102,103 @@ def parse_calibration(path: str) -> dict[str, np.ndarray]:
     return calib
 
 
-def parse_bvh(path: str) -> tuple[list[str], np.ndarray, float]:
-    """Возвращает (joint_names, positions(N, J, 3), fps).
+def _rot_zxy_batch(angles_deg: np.ndarray) -> np.ndarray:
+    """Матрицы вращения R = Rz · Rx · Ry для углов формы (N, 3) — порядок (z, x, y), град."""
+    rad = np.deg2rad(angles_deg).astype(np.float32)
+    z, x, y = rad[..., 0], rad[..., 1], rad[..., 2]
+    cz, sz = np.cos(z), np.sin(z)
+    cx, sx = np.cos(x), np.sin(x)
+    cy, sy = np.cos(y), np.sin(y)
+    n = z.shape[0]
+    Rz = np.zeros((n, 3, 3), dtype=np.float32)
+    Rz[:, 0, 0] = cz; Rz[:, 0, 1] = -sz; Rz[:, 1, 0] = sz; Rz[:, 1, 1] = cz; Rz[:, 2, 2] = 1
+    Rx = np.zeros((n, 3, 3), dtype=np.float32)
+    Rx[:, 0, 0] = 1; Rx[:, 1, 1] = cx; Rx[:, 1, 2] = -sx; Rx[:, 2, 1] = sx; Rx[:, 2, 2] = cx
+    Ry = np.zeros((n, 3, 3), dtype=np.float32)
+    Ry[:, 0, 0] = cy; Ry[:, 0, 2] = sy; Ry[:, 1, 1] = 1; Ry[:, 2, 0] = -sy; Ry[:, 2, 2] = cy
+    return Rz @ Rx @ Ry
 
-    В этом BVH каждый сустав имеет 6 каналов: Xposition Yposition Zposition
-    Zrotation Xrotation Yrotation — поэтому глобальные позиции берём напрямую
-    из первых трёх каналов каждого сустава, без forward kinematics.
+
+def parse_bvh(path: str) -> tuple[list[str], np.ndarray, float]:
+    """Возвращает (joint_names, positions(N, J, 3), fps) c настоящим forward kinematics.
+
+    В Blender-экспорте у каждого сустава 6 каналов (XYZpos + ZXYrot), но
+    position-каналы у не-root joints — это дубль OFFSET из HIERARCHY (статичные),
+    а реальное движение зашито в rotation-каналах. Поэтому позиции считаем через FK:
+        R_world[j] = R_world[parent] · Rz · Rx · Ry
+        pos_world[j] = pos_world[parent] + R_world[parent] · OFFSET[j]
+    Для Hips (root) pos_world берём напрямую из motion-каналов.
     """
     with open(path, "r") as f:
         content = f.read()
     hier_part, motion_part = content.split("MOTION")
 
     joint_names: list[str] = []
+    parents: list[int] = []
+    offsets: list[list[float]] = []
     channels_per_joint: list[int] = []
-    for line in hier_part.split("\n"):
+    stack: list[int] = []   # стек индексов открытых joint'ов
+
+    lines_h = hier_part.split("\n")
+    pending_offset: list[float] | None = None
+    pending_joint_idx: int | None = None
+    skip_end_site = 0
+    for line in lines_h:
         s = line.strip()
+        if not s:
+            continue
         if s.startswith("ROOT") or s.startswith("JOINT"):
-            joint_names.append(s.split()[-1])
+            name = s.split()[-1]
+            parent = stack[-1] if stack else -1
+            joint_names.append(name)
+            parents.append(parent)
+            pending_joint_idx = len(joint_names) - 1
+        elif s.startswith("End Site"):
+            skip_end_site += 1
+        elif s.startswith("OFFSET"):
+            vals = [float(x) for x in s.split()[1:]]
+            if skip_end_site > 0:
+                continue  # игнорируем offset у end-site
+            pending_offset = vals
         elif s.startswith("CHANNELS"):
             channels_per_joint.append(int(s.split()[1]))
-    # CHANNELS у End Site нет, поэтому длина списка совпадает с числом суставов
+            offsets.append(pending_offset or [0.0, 0.0, 0.0])
+            pending_offset = None
+        elif s == "{":
+            if skip_end_site > 0:
+                continue
+            if pending_joint_idx is not None:
+                stack.append(pending_joint_idx)
+                pending_joint_idx = None
+        elif s == "}":
+            if skip_end_site > 0:
+                skip_end_site -= 1
+                continue
+            if stack:
+                stack.pop()
+
     assert len(channels_per_joint) == len(joint_names), \
         f"channels={len(channels_per_joint)} joints={len(joint_names)}"
+    J = len(joint_names)
+    offsets_arr = np.asarray(offsets, dtype=np.float32)  # (J, 3)
+
+    # Каналы: для каждого joint находим индексы pos/rot в плоском векторе кадра.
+    # В этих BVH-файлах порядок всегда "Xpos Ypos Zpos Zrot Xrot Yrot" (если 6 каналов)
+    # или "Zrot Xrot Yrot" (если 3 канала, только rotation).
+    pos_idx_per_joint: list[int | None] = []
+    rot_idx_per_joint: list[int] = []
+    off = 0
+    for nch in channels_per_joint:
+        if nch == 6:
+            pos_idx_per_joint.append(off)
+            rot_idx_per_joint.append(off + 3)
+        elif nch == 3:
+            pos_idx_per_joint.append(None)
+            rot_idx_per_joint.append(off)
+        else:
+            raise ValueError(f"Неподдерживаемое число каналов: {nch}")
+        off += nch
+    total_channels = off
 
     motion_lines = motion_part.strip().split("\n")
     frame_time = 1.0 / FPS
@@ -134,20 +209,43 @@ def parse_bvh(path: str) -> tuple[list[str], np.ndarray, float]:
             data_start = i + 1
             break
 
-    frames: list[np.ndarray] = []
+    rows: list[list[float]] = []
     for line in motion_lines[data_start:]:
         s = line.strip()
         if not s:
             continue
         vals = [float(x) for x in s.split()]
-        positions = np.zeros((len(joint_names), 3), dtype=np.float32)
-        offset = 0
-        for j, nch in enumerate(channels_per_joint):
-            positions[j] = vals[offset:offset + 3]
-            offset += nch
-        frames.append(positions)
+        if len(vals) != total_channels:
+            raise ValueError(f"Кадр содержит {len(vals)} каналов, ожидаем {total_channels}")
+        rows.append(vals)
+    M = np.asarray(rows, dtype=np.float32)   # (N, total_channels)
+    N = M.shape[0]
+
+    # Сборка rotations (N, J, 3) и root position (N, 3)
+    rotations = np.zeros((N, J, 3), dtype=np.float32)
+    for j in range(J):
+        rotations[:, j] = M[:, rot_idx_per_joint[j]:rot_idx_per_joint[j] + 3]
+    root_idx = pos_idx_per_joint[0]
+    assert root_idx is not None, "root должен иметь position-каналы"
+    root_pos = M[:, root_idx:root_idx + 3]    # (N, 3)
+
+    # Forward kinematics — итеративно по списку joints в порядке объявления
+    # (родители всегда раньше детей в BVH).
+    pos_world = np.zeros((N, J, 3), dtype=np.float32)
+    R_world = np.zeros((N, J, 3, 3), dtype=np.float32)
+    for j in range(J):
+        R_local = _rot_zxy_batch(rotations[:, j])    # (N, 3, 3)
+        p = parents[j]
+        if p < 0:
+            R_world[:, j] = R_local
+            pos_world[:, j] = root_pos
+        else:
+            R_world[:, j] = R_world[:, p] @ R_local
+            # pos = pos_parent + R_parent · offset[j]
+            pos_world[:, j] = pos_world[:, p] + np.einsum("nij,j->ni", R_world[:, p], offsets_arr[j])
+
     fps = 1.0 / frame_time if frame_time > 0 else FPS
-    return joint_names, np.asarray(frames, dtype=np.float32), fps
+    return joint_names, pos_world, fps
 
 
 # --- Quaternion utilities (порядок wxyz) -------------------------------------

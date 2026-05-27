@@ -71,24 +71,47 @@ def plot_compare(pred: np.ndarray, gt: np.ndarray | None = None, title: str | No
     return fig, ax
 
 
-def animate(frames: np.ndarray, out_path: str | None = None, fps: int = 30, title: str | None = None):
-    """frames: (T, 14, 3). Возвращает FuncAnimation; если задан out_path — сохраняет GIF."""
+def animate(frames: np.ndarray, gt: np.ndarray | None = None,
+            out_path: str | None = None, fps: int = 30, title: str | None = None):
+    """frames: (T, 14, 3). Если gt задан той же формы — рисует оба скелета (pred=red, GT=green).
+    Сохраняет GIF, если задан out_path."""
     assert frames.ndim == 3 and frames.shape[1:] == (14, 3), f"got {frames.shape}"
+    if gt is not None:
+        assert gt.shape == frames.shape, f"gt {gt.shape} != pred {frames.shape}"
     fig = plt.figure(figsize=(6, 6))
     ax = fig.add_subplot(111, projection="3d")
-    _setup_ax(ax, frames)
+    bounds = frames if gt is None else np.concatenate([frames, gt], axis=0)
+    _setup_ax(ax, bounds)
     if title:
         ax.set_title(title)
-    lines = [ax.plot([], [], [], color="steelblue", lw=2.5)[0] for _ in EDGES]
-    scat = ax.scatter([], [], [], c="steelblue", s=30)
+
+    pred_color = "crimson" if gt is not None else "steelblue"
+    pred_lines = [ax.plot([], [], [], color=pred_color, lw=2.5,
+                          label="Pred" if (gt is not None and k == 0) else None)[0]
+                  for k in range(len(EDGES))]
+    pred_scat = ax.scatter([], [], [], c=pred_color, s=30)
+    gt_lines: list = []
+    gt_scat = None
+    if gt is not None:
+        gt_lines = [ax.plot([], [], [], color="green", lw=2, alpha=0.6,
+                            label="GT" if k == 0 else None)[0]
+                    for k in range(len(EDGES))]
+        gt_scat = ax.scatter([], [], [], c="green", s=20, alpha=0.6)
+        ax.legend(loc="upper left")
+
+    def _draw(skel, lines, scat):
+        for (i, j), line in zip(EDGES, lines):
+            line.set_data([skel[i, 0], skel[j, 0]], [skel[i, 1], skel[j, 1]])
+            line.set_3d_properties([skel[i, 2], skel[j, 2]])
+        scat._offsets3d = (skel[:, 0], skel[:, 1], skel[:, 2])
 
     def update(t: int):
-        f = frames[t]
-        for (i, j), line in zip(EDGES, lines):
-            line.set_data([f[i, 0], f[j, 0]], [f[i, 1], f[j, 1]])
-            line.set_3d_properties([f[i, 2], f[j, 2]])
-        scat._offsets3d = (f[:, 0], f[:, 1], f[:, 2])
-        return [*lines, scat]
+        _draw(frames[t], pred_lines, pred_scat)
+        artists = [*pred_lines, pred_scat]
+        if gt is not None:
+            _draw(gt[t], gt_lines, gt_scat)
+            artists += [*gt_lines, gt_scat]
+        return artists
 
     anim = FuncAnimation(fig, update, frames=len(frames), interval=1000 // fps, blit=False)
     if out_path:
